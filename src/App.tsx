@@ -3,7 +3,9 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
+  ChevronDown,
   ExternalLink,
+  Repeat,
   Flame,
   Footprints,
   Moon,
@@ -13,7 +15,6 @@ import {
   Sparkles,
   Sun,
   Timer,
-  X,
 } from 'lucide-react';
 import {
   CARDIO_PROTOCOL,
@@ -24,9 +25,14 @@ import {
   SCHEDULE_CONS,
   SCHEDULE_PROS,
   STATIC_STRETCHES,
-  WORKOUT_DAYS,
 } from './data/workoutData';
-import { ExerciseMiniIcon, ExerciseMotionPlayer } from './components/ExerciseMotionPlayer';
+import { ALL_EXERCISES, DEFAULT_PROGRAM_ID, PROGRAMS } from './data/programs';
+import {
+  ExerciseMiniIcon,
+  ExerciseMotionPlayer,
+  resolveVariant,
+} from './components/ExerciseMotionPlayer';
+import { StretchCard } from './components/StretchCard';
 import { RestTimerBar } from './components/RestTimerBar';
 import { SafeImage } from './components/SafeImage';
 import { NutritionCalculator } from './components/NutritionCalculator';
@@ -35,6 +41,47 @@ type FilterMode = 'all' | 'new' | 'caution';
 
 const STORAGE_KEY = 'hypertrophy_completed_sets_v1';
 const THEME_KEY = 'hypertrophy_theme_v1';
+const PROGRAM_KEY = 'hypertrophy_program_v1';
+const VARIANTS_KEY = 'hypertrophy_variants_v1';
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/** True on wide screens, where details live in the sticky side panel instead of inline. */
+function useIsDesktop(): boolean {
+  const [isDesktop, setIsDesktop] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.matchMedia(DESKTOP_QUERY).matches : true
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isDesktop;
+}
+
+/** Scrolls an element into view once React has rendered it. */
+function scrollToId(id: string) {
+  window.setTimeout(() => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 60);
+}
 
 export default function App() {
   const [isDark, setIsDark] = useState<boolean>(() => {
@@ -46,22 +93,36 @@ export default function App() {
     }
   });
 
+  const isDesktop = useIsDesktop();
+
+  const [programId, setProgramId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(PROGRAM_KEY);
+      return saved && PROGRAMS.some((p) => p.id === saved) ? saved : DEFAULT_PROGRAM_ID;
+    } catch {
+      return DEFAULT_PROGRAM_ID;
+    }
+  });
+  const program = PROGRAMS.find((p) => p.id === programId) || PROGRAMS[0];
+  const days = program.days;
+
   const [selectedDayNum, setSelectedDayNum] = useState<number>(1);
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [selectedExerciseId, setSelectedExerciseId] = useState<string>(
-    WORKOUT_DAYS[0].exercises[0].id
+    days[0].exercises[0].id
   );
-  const [mobilePlayerOpen, setMobilePlayerOpen] = useState<boolean>(false);
+  // Mobile: which exercise card is expanded inline (no popups).
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Chosen alternative per exercise: { [exerciseId]: alternativeName }
+  const [variants, setVariants] = useState<Record<string, string>>(() =>
+    readJson(VARIANTS_KEY, {})
+  );
 
   // Completed sets map: { [exerciseId]: number[] (completed set indices) }
-  const [completedSets, setCompletedSets] = useState<Record<string, number[]>>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [completedSets, setCompletedSets] = useState<Record<string, number[]>>(() =>
+    readJson(STORAGE_KEY, {})
+  );
 
   // Active rest / stretch timer state
   const [timerState, setTimerState] = useState<{
@@ -91,18 +152,18 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Persist completed sets
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(completedSets));
-    } catch {
-      // ignore storage errors
-    }
-  }, [completedSets]);
+  useEffect(() => writeStorage(STORAGE_KEY, JSON.stringify(completedSets)), [completedSets]);
+  useEffect(() => writeStorage(VARIANTS_KEY, JSON.stringify(variants)), [variants]);
+  useEffect(() => writeStorage(PROGRAM_KEY, programId), [programId]);
 
   const currentDay = useMemo(
-    () => WORKOUT_DAYS.find((d) => d.dayNumber === selectedDayNum) || WORKOUT_DAYS[0],
-    [selectedDayNum]
+    () => days.find((d) => d.dayNumber === selectedDayNum) || days[0],
+    [days, selectedDayNum]
+  );
+
+  const programHasNew = useMemo(
+    () => days.some((d) => d.exercises.some((e) => e.isNew)),
+    [days]
   );
 
   const filteredExercises = useMemo(() => {
@@ -115,24 +176,50 @@ export default function App() {
     return currentDay.exercises;
   }, [currentDay, filterMode]);
 
-  const allExercisesFlat = useMemo(
-    () => WORKOUT_DAYS.flatMap((d) => d.exercises),
-    []
-  );
-
   const activeExercise: ExerciseItem = useMemo(() => {
-    const foundInAll = allExercisesFlat.find((e) => e.id === selectedExerciseId);
+    const foundInAll = ALL_EXERCISES.find((e) => e.id === selectedExerciseId);
     if (foundInAll) return foundInAll;
     return currentDay.exercises[0];
-  }, [allExercisesFlat, currentDay, selectedExerciseId]);
+  }, [currentDay, selectedExerciseId]);
+
+  const cardioExercise = ALL_EXERCISES.find((e) => e.id === 'd7-active-recovery')!;
+
+  const handleSelectProgram = (id: string) => {
+    const next = PROGRAMS.find((p) => p.id === id);
+    if (!next) return;
+    setProgramId(id);
+    setSelectedDayNum(1);
+    setFilterMode('all');
+    setExpandedId(null);
+    setSelectedExerciseId(next.days[0].exercises[0].id);
+  };
 
   const handleSelectDay = (dayNum: number) => {
     setSelectedDayNum(dayNum);
     setFilterMode('all');
-    const dayObj = WORKOUT_DAYS.find((d) => d.dayNumber === dayNum);
+    setExpandedId(null);
+    const dayObj = days.find((d) => d.dayNumber === dayNum);
     if (dayObj && dayObj.exercises.length > 0) {
       setSelectedExerciseId(dayObj.exercises[0].id);
     }
+  };
+
+  /** Desktop: load into the side panel. Mobile: expand/collapse the card inline. */
+  const handleOpenExercise = (exerciseId: string) => {
+    setSelectedExerciseId(exerciseId);
+    if (isDesktop) return;
+    const willExpand = expandedId !== exerciseId;
+    setExpandedId(willExpand ? exerciseId : null);
+    if (willExpand) scrollToId(`ex-${exerciseId}`);
+  };
+
+  const handleSelectVariant = (exerciseId: string, name: string | null) => {
+    setVariants((prev) => {
+      const next = { ...prev };
+      if (name) next[exerciseId] = name;
+      else delete next[exerciseId];
+      return next;
+    });
   };
 
   const handleToggleSet = (exerciseId: string, setIndex: number) => {
@@ -156,15 +243,16 @@ export default function App() {
   };
 
   const handlePreviewFromWarning = (dayNum: number, exerciseId: string) => {
+    // Warnings refer to the modified program.
+    setProgramId(DEFAULT_PROGRAM_ID);
     setSelectedDayNum(dayNum);
     setFilterMode('all');
     setSelectedExerciseId(exerciseId);
-    const el = document.getElementById('schedule');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    }
-    if (window.innerWidth < 1024) {
-      setMobilePlayerOpen(true);
+    if (isDesktop) {
+      scrollToId('schedule');
+    } else {
+      setExpandedId(exerciseId);
+      scrollToId(`ex-${exerciseId}`);
     }
   };
 
@@ -306,35 +394,28 @@ export default function App() {
             </div>
           </div>
 
-          {/* 4-Column Summary Strip below Hero */}
+          {/* 4-Column Summary Strip below Hero (follows the selected program) */}
           <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">تقسيمة الأسبوع</div>
-              <div className="mt-1 text-xl font-bold font-mono-num text-slate-900 dark:text-white">
-                ٥ تدريب + ٢ راحة
+            {program.stats.map((st) => (
+              <div
+                key={st.label}
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4"
+              >
+                <div className="text-xs text-slate-500 dark:text-slate-400">{st.label}</div>
+                <div
+                  className={`mt-1 text-xl font-bold font-mono-num ${
+                    st.tone === 'amber'
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : st.tone === 'emerald'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-slate-900 dark:text-white'
+                  }`}
+                >
+                  {st.value}
+                </div>
+                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{st.sub}</div>
               </div>
-              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                الراحة في اليوم ٤ واليوم ٧
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">التكرار الأسبوعي</div>
-              <div className="mt-1 text-xl font-bold font-mono-num text-amber-600 dark:text-amber-400">
-                ٢× لكل عضلة
-              </div>
-              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                المعدل المثالي للتضخيم
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4">
-              <div className="text-xs text-slate-500 dark:text-slate-400">التمارين المضافة حديثًا</div>
-              <div className="mt-1 text-xl font-bold font-mono-num text-emerald-600 dark:text-emerald-400">
-                ٧ إضافات ذكية
-              </div>
-              <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                كتف خلفي، صدر، تبياليس، أسفل ضهر
-              </div>
-            </div>
+            ))}
             <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4">
               <div className="text-xs text-slate-500 dark:text-slate-400">الكارديو بعد التمرين</div>
               <div className="mt-1 text-xl font-bold font-mono-num text-slate-900 dark:text-white">
@@ -353,7 +434,7 @@ export default function App() {
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
             <div>
               <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                رابعًا · الجدول المعدّل التفاعلي
+                رابعًا · الجداول التفاعلية
               </p>
               <h2 className="mt-1 text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
                 جدول التمرين وعروض الأداء الصحيح (HD)
@@ -384,13 +465,53 @@ export default function App() {
             </div>
           </div>
 
+          {/* Program Switcher */}
+          <div className="mb-5">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2">
+              اختار الجدول
+            </div>
+            <div role="radiogroup" aria-label="اختار الجدول" className="grid grid-cols-3 gap-2">
+              {PROGRAMS.map((p) => {
+                const active = p.id === program.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => handleSelectProgram(p.id)}
+                    className={`text-right p-3 rounded-xl border transition-colors min-h-[60px] ${
+                      active
+                        ? 'border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/40'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] hover:border-slate-300 dark:hover:border-slate-700'
+                    }`}
+                  >
+                    <div
+                      className={`text-sm font-bold leading-snug ${
+                        active ? 'text-amber-700 dark:text-amber-300' : 'text-slate-900 dark:text-white'
+                      }`}
+                    >
+                      {p.name}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 truncate" dir="ltr">
+                      {p.nameEn}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+              {program.description}
+            </p>
+          </div>
+
           {/* 7-Day Selector Tabs */}
           <div
             role="tablist"
             aria-label="أيام الأسبوع التدريبية"
             className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-6"
           >
-            {WORKOUT_DAYS.map((day) => {
+            {days.map((day) => {
               const active = day.dayNumber === selectedDayNum;
               return (
                 <button
@@ -454,7 +575,7 @@ export default function App() {
                   <div className="flex items-center gap-1 p-1 rounded-lg bg-black/50 backdrop-blur-sm border border-white/15">
                     {[
                       { id: 'all' as FilterMode, label: 'كل التمارين' },
-                      { id: 'new' as FilterMode, label: 'الجديدة فقط' },
+                      ...(programHasNew ? [{ id: 'new' as FilterMode, label: 'الجديدة فقط' }] : []),
                       { id: 'caution' as FilterMode, label: 'تحتاج حذر' },
                     ].map((f) => (
                       <button
@@ -501,35 +622,34 @@ export default function App() {
                 </div>
               ) : (
                 filteredExercises.map((ex, index) => {
-                  const isSelected = activeExercise.id === ex.id;
+                  const isExpanded = !isDesktop && expandedId === ex.id;
+                  const isSelected = isDesktop ? activeExercise.id === ex.id : isExpanded;
                   const doneIndices = completedSets[ex.id] || [];
                   const allDone = doneIndices.length >= ex.workingSetsCount;
+                  const shown = resolveVariant(ex, variants[ex.id]);
 
                   return (
                     <div
                       key={ex.id}
-                      className={`rounded-xl border transition-colors bg-white dark:bg-[#111622] ${
+                      id={`ex-${ex.id}`}
+                      className={`scroll-mt-20 rounded-xl border transition-colors bg-white dark:bg-[#111622] ${
                         isSelected
                           ? 'border-amber-500 ring-1 ring-amber-500/40'
                           : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                       }`}
                     >
                       <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        {/* Clickable Info Area -> Loads Exercise into Motion Player */}
+                        {/* Clickable Info Area -> side panel (desktop) / inline details (mobile) */}
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedExerciseId(ex.id);
-                            if (window.innerWidth < 1024) {
-                              setMobilePlayerOpen(true);
-                            }
-                          }}
+                          onClick={() => handleOpenExercise(ex.id)}
+                          aria-expanded={isDesktop ? undefined : isExpanded}
                           className="flex items-center gap-3.5 text-right min-w-0 flex-1 group"
                         >
                           <ExerciseMiniIcon
-                            videoUrl={ex.videoUrl}
-                            posterUrl={ex.posterUrl}
-                            name={ex.name}
+                            videoUrl={shown.videoUrl}
+                            posterUrl={shown.posterUrl}
+                            name={shown.name}
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -560,13 +680,22 @@ export default function App() {
                                   </span>
                                 </>
                               )}
+                              {shown.variant && (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 font-semibold">
+                                    <Repeat className="w-3 h-3" />
+                                    بديل
+                                  </span>
+                                </>
+                              )}
                             </div>
 
                             <div className="mt-1 text-base font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
-                              {ex.name}
+                              {shown.name}
                             </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                              {ex.nameAr}
+                              {shown.nameAr}
                             </div>
                           </div>
                         </button>
@@ -603,23 +732,25 @@ export default function App() {
                           )}
 
                           <div className="flex items-center gap-1.5">
-                            {/* Mobile explicit "الحركة" button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedExerciseId(ex.id);
-                                setMobilePlayerOpen(true);
-                              }}
-                              className="lg:hidden inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 text-xs font-semibold min-h-[36px] whitespace-nowrap"
-                            >
-                              <PlayCircle className="w-3.5 h-3.5" />
-                              <span>الحركة</span>
-                            </button>
+                            {/* Mobile: expand / collapse details inline */}
+                            {!isDesktop && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenExercise(ex.id)}
+                                aria-expanded={isExpanded}
+                                className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 text-xs font-semibold min-h-[36px] whitespace-nowrap"
+                              >
+                                <ChevronDown
+                                  className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                />
+                                <span>{isExpanded ? 'إخفاء' : 'التفاصيل'}</span>
+                              </button>
+                            )}
 
                             {ex.restSeconds > 0 && (
                               <button
                                 type="button"
-                                onClick={() => handleStartTimer(ex.restSeconds, ex.name)}
+                                onClick={() => handleStartTimer(ex.restSeconds, shown.name)}
                                 title={`مؤقت الراحة (${ex.restLabel})`}
                                 className="inline-flex items-center gap-1 px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium min-h-[36px] whitespace-nowrap"
                               >
@@ -629,7 +760,7 @@ export default function App() {
                             )}
 
                             <a
-                              href={ex.youtubeUrl}
+                              href={shown.youtubeUrl}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-red-50 dark:hover:bg-red-950/30 hover:border-red-300 dark:hover:border-red-800 text-slate-700 dark:text-slate-200 text-xs font-semibold min-h-[36px] transition-colors whitespace-nowrap"
@@ -647,13 +778,34 @@ export default function App() {
                           <span>تم إكمال جميع مجموعات العمل لهذا التمرين</span>
                         </div>
                       )}
+
+                      {/* Mobile inline details (replaces the old popup) */}
+                      {isExpanded && (
+                        <div className="border-t border-slate-200 dark:border-slate-800 p-2 sm:p-3">
+                          <ExerciseMotionPlayer
+                            exercise={ex}
+                            onStartRestTimer={handleStartTimer}
+                            variantName={variants[ex.id] ?? null}
+                            onSelectVariant={(name) => handleSelectVariant(ex.id, name)}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(null)}
+                            className="mt-2 w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-[40px]"
+                          >
+                            <ChevronDown className="w-4 h-4 rotate-180" />
+                            <span>إخفاء التفاصيل</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
 
               {/* Post-Workout Cardio Protocol Strip */}
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div id="ex-cardio" className="scroll-mt-20 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] overflow-hidden">
+              <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
                     <Footprints className="w-5 h-5" />
@@ -671,59 +823,44 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedExerciseId('d7-active-recovery');
-                    if (window.innerWidth < 1024) {
-                      setMobilePlayerOpen(true);
+                    if (isDesktop) {
+                      setSelectedExerciseId(cardioExercise.id);
+                    } else {
+                      setExpandedId((cur) => (cur === 'cardio' ? null : 'cardio'));
                     }
                   }}
+                  aria-expanded={isDesktop ? undefined : expandedId === 'cardio'}
                   className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold text-slate-800 dark:text-slate-100 whitespace-nowrap shrink-0 min-h-[38px]"
                 >
-                  معاينة المشاية
+                  {!isDesktop && expandedId === 'cardio' ? 'إخفاء المعاينة' : 'معاينة المشاية'}
                 </button>
+              </div>
+              {!isDesktop && expandedId === 'cardio' && (
+                <div className="border-t border-slate-200 dark:border-slate-800 p-2 sm:p-3">
+                  <ExerciseMotionPlayer
+                    exercise={cardioExercise}
+                    onStartRestTimer={handleStartTimer}
+                    variantName={variants[cardioExercise.id] ?? null}
+                    onSelectVariant={(name) => handleSelectVariant(cardioExercise.id, name)}
+                  />
+                </div>
+              )}
               </div>
             </div>
 
             {/* Right/Opposite in RTL (Desktop Sticky Motion Stage) */}
-            <div className="hidden lg:block lg:col-span-5 lg:sticky lg:top-20">
-              <ExerciseMotionPlayer
-                exercise={activeExercise}
-                onStartRestTimer={handleStartTimer}
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* Mobile Motion Player Sheet / Modal */}
-        {mobilePlayerOpen && (
-          <div
-            className="fixed inset-0 z-50 lg:hidden bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`محاكاة ${activeExercise.name}`}
-          >
-            <div className="w-full max-w-lg max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl bg-white dark:bg-[#111622] border-t sm:border border-slate-200 dark:border-slate-800">
-              <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 bg-white/95 dark:bg-[#111622]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
-                  عرض الحركة عالي الدقة (HD)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setMobilePlayerOpen(false)}
-                  aria-label="إغلاق العارض"
-                  className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-[40px] min-w-[40px] flex items-center justify-center"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="p-3">
+            {isDesktop && (
+              <div className="lg:col-span-5 lg:sticky lg:top-20">
                 <ExerciseMotionPlayer
                   exercise={activeExercise}
                   onStartRestTimer={handleStartTimer}
+                  variantName={variants[activeExercise.id] ?? null}
+                  onSelectVariant={(name) => handleSelectVariant(activeExercise.id, name)}
                 />
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </section>
 
         {/* Section 1 & 2: المميزات والعيوب */}
         <section id="review" className="max-w-7xl mx-auto px-4 sm:px-6 py-12 border-t border-slate-200 dark:border-slate-800/80">
@@ -933,60 +1070,21 @@ export default function App() {
               </button>
             </div>
 
-            <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 text-xs font-bold text-slate-600 dark:text-slate-300">
-                      <th className="py-3 px-4">العضلة</th>
-                      <th className="py-3 px-4">الإطالة المقترحة</th>
-                      <th className="py-3 px-4 whitespace-nowrap">فيديو الشرح</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800 text-sm">
-                    {STATIC_STRETCHES.map((st) => (
-                      <tr
-                        key={st.muscle}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-900/30 transition-colors"
-                      >
-                        <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                          <div className="flex items-center gap-3">
-                            <div className="w-16 h-10 rounded-lg bg-white border border-slate-200 dark:border-slate-700 shrink-0 overflow-hidden">
-                              <video
-                                src={st.videoUrl}
-                                poster={st.posterUrl}
-                                autoPlay
-                                loop
-                                muted
-                                playsInline
-                                preload="metadata"
-                                disablePictureInPicture
-                                aria-label={`إطالة ${st.muscle}`}
-                                className="w-full h-full object-contain pointer-events-none"
-                              />
-                            </div>
-                            <span>{st.muscle}</span>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                          {st.stretch}
-                        </td>
-                        <td className="py-3 px-4 whitespace-nowrap">
-                          <a
-                            href={st.youtubeUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>شوف</span>
-                          </a>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+              دوس على الفيديو عشان يكبر ملء الشاشة.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {STATIC_STRETCHES.map((st) => (
+                <StretchCard
+                  key={st.muscle}
+                  muscle={st.muscle}
+                  stretch={st.stretch}
+                  videoUrl={st.videoUrl}
+                  posterUrl={st.posterUrl}
+                  youtubeUrl={st.youtubeUrl}
+                  onStartTimer={() => handleStartTimer(30, `إطالة ${st.muscle}`)}
+                />
+              ))}
             </div>
 
             <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] p-4 flex flex-wrap items-center justify-between gap-3">

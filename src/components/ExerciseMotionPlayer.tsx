@@ -1,24 +1,58 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  Check,
   ExternalLink,
   Gauge,
   Maximize2,
   Pause,
   Play,
+  Repeat,
   ShieldCheck,
   Sparkles,
-  X,
 } from 'lucide-react';
 import {
   ExerciseItem,
   MUSCLE_LABELS,
   MuscleZone,
 } from '../data/workoutData';
+import { ExerciseAlternative, getAlternatives } from '../data/alternatives';
+import { openVideoFullscreen } from './fullscreen';
 
 interface ExerciseMotionPlayerProps {
   exercise: ExerciseItem;
   onStartRestTimer?: (seconds: number, label: string) => void;
+  /** Name of the chosen alternative for this exercise, or null for the original. */
+  variantName?: string | null;
+  onSelectVariant?: (name: string | null) => void;
+}
+
+/** Resolves what is actually shown: the planned exercise or the chosen alternative. */
+export function resolveVariant(
+  exercise: ExerciseItem,
+  variantName?: string | null
+): { variant: ExerciseAlternative | null; name: string; nameAr: string; videoUrl?: string; posterUrl?: string; youtubeUrl: string } {
+  const variant = variantName
+    ? getAlternatives(exercise.motion, exercise.videoUrl).find((a) => a.name === variantName) || null
+    : null;
+  if (!variant) {
+    return {
+      variant: null,
+      name: exercise.name,
+      nameAr: exercise.nameAr,
+      videoUrl: exercise.videoUrl,
+      posterUrl: exercise.posterUrl,
+      youtubeUrl: exercise.youtubeUrl,
+    };
+  }
+  return {
+    variant,
+    name: variant.name,
+    nameAr: variant.nameAr,
+    videoUrl: variant.videoUrl,
+    posterUrl: variant.posterUrl,
+    youtubeUrl: variant.youtubeUrl,
+  };
 }
 
 /** Muscle Focus Summary */
@@ -55,12 +89,15 @@ export function ExerciseMiniIcon({
   posterUrl,
   name,
 }: {
-  videoUrl: string;
-  posterUrl: string;
+  videoUrl?: string;
+  posterUrl?: string;
   name: string;
 }) {
   return (
     <div className="w-20 h-12 rounded-lg bg-white border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
+      {!videoUrl ? (
+        <Repeat className="w-5 h-5 text-amber-500" aria-label={`بديل: ${name}`} />
+      ) : (
       <video
         src={videoUrl}
         poster={posterUrl}
@@ -73,6 +110,7 @@ export function ExerciseMiniIcon({
         aria-label={`حركة تمرين ${name}`}
         className="w-full h-full object-contain pointer-events-none"
       />
+      )}
     </div>
   );
 }
@@ -80,12 +118,14 @@ export function ExerciseMiniIcon({
 export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
   exercise,
   onStartRestTimer,
+  variantName = null,
+  onSelectVariant,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const zoomVideoRef = useRef<HTMLVideoElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [speed, setSpeed] = useState<0.5 | 1>(1);
-  const [zoomOpen, setZoomOpen] = useState(false);
+  const shown = resolveVariant(exercise, variantName);
+  const alternatives = getAlternatives(exercise.motion, exercise.videoUrl);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -103,14 +143,7 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
     } else {
       v.pause();
     }
-  }, [exercise.videoUrl, isPlaying, speed]);
-
-  useEffect(() => {
-    const zv = zoomVideoRef.current;
-    if (!zv || !zoomOpen) return;
-    zv.playbackRate = speed;
-    zv.play().catch(() => {});
-  }, [zoomOpen, speed, exercise.videoUrl]);
+  }, [shown.videoUrl, isPlaying, speed]);
 
   return (
     <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#111622] overflow-hidden">
@@ -121,7 +154,7 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
             <span>حركة تشريحية عالية الدقة (HD)</span>
             <span aria-hidden="true">·</span>
             <span className="font-mono-num">RIR {exercise.rir}</span>
-            {exercise.isNew && (
+            {exercise.isNew && !shown.variant && (
               <>
                 <span aria-hidden="true">·</span>
                 <span className="text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-1">
@@ -130,17 +163,26 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
                 </span>
               </>
             )}
+            {shown.variant && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-sky-600 dark:text-sky-400 font-semibold inline-flex items-center gap-1">
+                  <Repeat className="w-3 h-3" />
+                  بديل لـ {exercise.name}
+                </span>
+              </>
+            )}
           </div>
           <h3 className="mt-1 text-lg sm:text-xl font-bold text-slate-900 dark:text-white leading-snug">
-            {exercise.name}
+            {shown.name}
           </h3>
           <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">
-            {exercise.nameAr}
+            {shown.nameAr}
           </p>
         </div>
 
         <a
-          href={exercise.youtubeUrl}
+          href={shown.youtubeUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0 min-h-[40px]"
@@ -153,23 +195,42 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
       {/* 960x540 HD Auto-Looping Exercise Stage */}
       <div className="bg-slate-100 dark:bg-[#0C1018] p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800">
         <div className="rounded-xl bg-white border border-slate-200 dark:border-slate-700 overflow-hidden aspect-video flex items-center justify-center">
+          {!shown.videoUrl ? (
+            <div className="flex flex-col items-center justify-center gap-3 p-4 text-center">
+              <Repeat className="w-8 h-8 text-amber-500" />
+              <p className="text-sm font-semibold text-slate-800">
+                مفيش فيديو محلي للبديل ده
+              </p>
+              <a
+                href={shown.youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold min-h-[40px]"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>شوف طريقة الأداء على يوتيوب</span>
+              </a>
+            </div>
+          ) : (
           <video
             ref={videoRef}
-            key={exercise.videoUrl}
-            src={exercise.videoUrl}
-            poster={exercise.posterUrl}
+            key={shown.videoUrl}
+            src={shown.videoUrl}
+            poster={shown.posterUrl}
             autoPlay={isPlaying}
             loop
             muted
             playsInline
             preload="auto"
             disablePictureInPicture
-            aria-label={`عرض الأداء الصحيح لتمرين ${exercise.name} (${exercise.nameAr})`}
+            aria-label={`عرض الأداء الصحيح لتمرين ${shown.name} (${shown.nameAr})`}
             className="w-full h-full object-contain"
           />
+          )}
         </div>
 
         {/* Clean Controls Bar Below Video (zero overlay clutter) */}
+        {shown.videoUrl && (
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <button
@@ -197,14 +258,15 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
 
           <button
             type="button"
-            onClick={() => setZoomOpen(true)}
-            aria-label="تكبير عرض الحركة"
+            onClick={() => openVideoFullscreen(videoRef.current)}
+            aria-label="تكبير الفيديو ملء الشاشة"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors min-h-[36px] whitespace-nowrap"
           >
             <Maximize2 className="w-3.5 h-3.5" />
-            <span>تكبير HD</span>
+            <span>ملء الشاشة</span>
           </button>
         </div>
+        )}
 
         {/* 3-Step Execution Phases Strip */}
         <div className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
@@ -223,6 +285,66 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
           ))}
         </div>
       </div>
+
+      {/* Alternatives: same muscle, different equipment */}
+      {alternatives.length > 0 && onSelectVariant && (
+        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+              <Repeat className="w-4 h-4 text-sky-500 shrink-0" />
+              <span>الجهاز مش موجود أو مشغول؟ اختار بديل</span>
+            </div>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono-num">
+              {alternatives.length} بدائل
+            </span>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+            نفس العضلة ونفس المجموعات والتكرارات، بأداة تانية. اختيارك بيتحفظ للمرة الجاية.
+          </p>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {[null, ...alternatives].map((a) => {
+              const name = a ? a.name : null;
+              const selected = (variantName ?? null) === name;
+              return (
+                <button
+                  key={name ?? '__original'}
+                  type="button"
+                  onClick={() => onSelectVariant(name)}
+                  aria-pressed={selected}
+                  className={`text-right rounded-lg border px-3 py-2 transition-colors min-h-[52px] ${
+                    selected
+                      ? 'border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/30'
+                      : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-900 dark:text-white leading-snug">
+                      {a ? a.nameAr : `الأصلي: ${exercise.nameAr}`}
+                    </span>
+                    {selected ? (
+                      <Check className="w-4 h-4 text-sky-500 shrink-0" />
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+                        {a ? a.equipment : 'المخطط'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+                    <span className="truncate" dir="ltr">{a ? a.name : exercise.name}</span>
+                    <span className="shrink-0">{!a || a.videoUrl ? 'فيديو' : 'يوتيوب'}</span>
+                  </div>
+                  {a?.note && selected && (
+                    <p className="mt-1 text-[11px] text-sky-700 dark:text-sky-300 leading-relaxed">
+                      {a.note}
+                    </p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Muscles & Form Details */}
       <div className="p-4 sm:p-5 space-y-4">
@@ -299,14 +421,14 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
           {exercise.restSeconds > 0 && onStartRestTimer && (
             <button
               type="button"
-              onClick={() => onStartRestTimer(exercise.restSeconds, exercise.name)}
+              onClick={() => onStartRestTimer(exercise.restSeconds, shown.name)}
               className="flex-1 min-w-[140px] py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs sm:text-sm transition-colors whitespace-nowrap"
             >
               تشغيل مؤقت الراحة ({exercise.restLabel})
             </button>
           )}
           <a
-            href={exercise.youtubeUrl}
+            href={shown.youtubeUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 min-w-[140px] py-2.5 px-4 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
@@ -317,54 +439,6 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
         </div>
       </div>
 
-      {/* Lightbox Zoom Modal (Full 960x540 HD) */}
-      {zoomOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`تكبير حركة ${exercise.name}`}
-          onClick={() => setZoomOpen(false)}
-        >
-          <div
-            className="w-full max-w-3xl rounded-2xl bg-white dark:bg-[#111622] border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-bold text-slate-900 dark:text-white">
-                  {exercise.name}
-                </div>
-                <div className="text-xs text-slate-500 dark:text-slate-400">
-                  {exercise.nameAr}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setZoomOpen(false)}
-                aria-label="إغلاق التكبير"
-                className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 min-h-[40px] min-w-[40px] flex items-center justify-center"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="bg-white p-3 sm:p-4 flex items-center justify-center aspect-video">
-              <video
-                ref={zoomVideoRef}
-                src={exercise.videoUrl}
-                poster={exercise.posterUrl}
-                autoPlay
-                loop
-                muted
-                playsInline
-                disablePictureInPicture
-                aria-label={`تكبير حركة تمرين ${exercise.name}`}
-                className="w-full h-full object-contain"
-              />
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
