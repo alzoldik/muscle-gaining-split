@@ -6,7 +6,8 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    base: './',
+    // This app is hosted from a GitHub Pages project subpath.
+    base: '/muscle-gaining-split/',
     plugins: [
       react(),
       tailwindcss(),
