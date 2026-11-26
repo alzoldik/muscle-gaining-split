@@ -12,9 +12,12 @@ import {
   Sparkles,
 } from 'lucide-react';
 import {
+  DIFFICULTY_LABELS,
   ExerciseItem,
+  Level,
   MUSCLE_LABELS,
   MuscleZone,
+  RISK_LABELS,
 } from '../data/workoutData';
 import { ExerciseAlternative, getAlternatives } from '../data/alternatives';
 import { openVideoFullscreen } from './fullscreen';
@@ -31,7 +34,16 @@ interface ExerciseMotionPlayerProps {
 export function resolveVariant(
   exercise: ExerciseItem,
   variantName?: string | null
-): { variant: ExerciseAlternative | null; name: string; nameAr: string; videoUrl?: string; posterUrl?: string; youtubeUrl: string } {
+): {
+  variant: ExerciseAlternative | null;
+  name: string;
+  nameAr: string;
+  videoUrl: string;
+  posterUrl: string;
+  youtubeUrl: string;
+  difficulty: Level;
+  risk: Level;
+} {
   const variant = variantName
     ? getAlternatives(exercise.motion, exercise.videoUrl).find((a) => a.name === variantName) || null
     : null;
@@ -43,6 +55,8 @@ export function resolveVariant(
       videoUrl: exercise.videoUrl,
       posterUrl: exercise.posterUrl,
       youtubeUrl: exercise.youtubeUrl,
+      difficulty: exercise.difficulty,
+      risk: exercise.risk,
     };
   }
   return {
@@ -52,7 +66,61 @@ export function resolveVariant(
     videoUrl: variant.videoUrl,
     posterUrl: variant.posterUrl,
     youtubeUrl: variant.youtubeUrl,
+    difficulty: variant.difficulty,
+    risk: variant.risk,
   };
+}
+
+const LEVEL_TONE: Record<Level, string> = {
+  1: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+  2: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30',
+  3: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30',
+};
+
+const LEVEL_DOT: Record<Level, string> = {
+  1: 'bg-emerald-500',
+  2: 'bg-amber-500',
+  3: 'bg-rose-500',
+};
+
+function LevelMeter({ level }: { level: Level }) {
+  return (
+    <span className="inline-flex items-center gap-0.5" aria-hidden="true">
+      {[1, 2, 3].map((i) => (
+        <span
+          key={i}
+          className={`inline-block w-1.5 h-1.5 rounded-full ${i <= level ? LEVEL_DOT[level] : 'bg-slate-300 dark:bg-slate-600'}`}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** Difficulty (how hard the technique is) and risk (injury risk if done wrong) chips. */
+export function LevelBadges({
+  difficulty,
+  risk,
+  compact = false,
+}: {
+  difficulty: Level;
+  risk: Level;
+  compact?: boolean;
+}) {
+  const base = `inline-flex items-center gap-1 rounded border font-semibold whitespace-nowrap ${
+    compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-[11px]'
+  }`;
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <span className={`${base} ${LEVEL_TONE[difficulty]}`} title="مستوى الصعوبة: قد إيه التكنيك صعب يتعلم">
+        <LevelMeter level={difficulty} />
+        الصعوبة: {DIFFICULTY_LABELS[difficulty]}
+      </span>
+      <span className={`${base} ${LEVEL_TONE[risk]}`} title="مستوى الخطورة: احتمال الإصابة لو اتلعب غلط">
+        <LevelMeter level={risk} />
+        الخطورة: {RISK_LABELS[risk]}
+      </span>
+    </span>
+  );
 }
 
 /** Muscle Focus Summary */
@@ -89,15 +157,12 @@ export function ExerciseMiniIcon({
   posterUrl,
   name,
 }: {
-  videoUrl?: string;
-  posterUrl?: string;
+  videoUrl: string;
+  posterUrl: string;
   name: string;
 }) {
   return (
     <div className="w-20 h-12 rounded-lg bg-white border border-slate-200 dark:border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-xs">
-      {!videoUrl ? (
-        <Repeat className="w-5 h-5 text-amber-500" aria-label={`بديل: ${name}`} />
-      ) : (
       <video
         src={videoUrl}
         poster={posterUrl}
@@ -110,7 +175,6 @@ export function ExerciseMiniIcon({
         aria-label={`حركة تمرين ${name}`}
         className="w-full h-full object-contain pointer-events-none"
       />
-      )}
     </div>
   );
 }
@@ -153,7 +217,11 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
             <span>حركة تشريحية عالية الدقة (HD)</span>
             <span aria-hidden="true">·</span>
-            <span className="font-mono-num">RIR {exercise.rir}</span>
+            {exercise.kind ? (
+              <span className="font-semibold">إطالة بعد التمرين</span>
+            ) : (
+              <span className="font-mono-num">RIR {exercise.rir}</span>
+            )}
             {exercise.isNew && !shown.variant && (
               <>
                 <span aria-hidden="true">·</span>
@@ -179,6 +247,17 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
           <p className="text-sm text-slate-600 dark:text-slate-300 mt-0.5">
             {shown.nameAr}
           </p>
+          {!exercise.kind && (
+            <div className="mt-2">
+              <LevelBadges difficulty={shown.difficulty} risk={shown.risk} />
+            </div>
+          )}
+          {exercise.replaces && !shown.variant && (
+            <p className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              بديل آمن لـ {exercise.replaces} اللي في الـ PDF
+            </p>
+          )}
         </div>
 
         <a
@@ -195,23 +274,6 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
       {/* 960x540 HD Auto-Looping Exercise Stage */}
       <div className="bg-slate-100 dark:bg-[#0C1018] p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800">
         <div className="rounded-xl bg-white border border-slate-200 dark:border-slate-700 overflow-hidden aspect-video flex items-center justify-center">
-          {!shown.videoUrl ? (
-            <div className="flex flex-col items-center justify-center gap-3 p-4 text-center">
-              <Repeat className="w-8 h-8 text-amber-500" />
-              <p className="text-sm font-semibold text-slate-800">
-                مفيش فيديو محلي للبديل ده
-              </p>
-              <a
-                href={shown.youtubeUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold min-h-[40px]"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>شوف طريقة الأداء على يوتيوب</span>
-              </a>
-            </div>
-          ) : (
           <video
             ref={videoRef}
             key={shown.videoUrl}
@@ -226,11 +288,9 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
             aria-label={`عرض الأداء الصحيح لتمرين ${shown.name} (${shown.nameAr})`}
             className="w-full h-full object-contain"
           />
-          )}
         </div>
 
         {/* Clean Controls Bar Below Video (zero overlay clutter) */}
-        {shown.videoUrl && (
         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             <button
@@ -266,7 +326,6 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
             <span>ملء الشاشة</span>
           </button>
         </div>
-        )}
 
         {/* 3-Step Execution Phases Strip */}
         <div className="mt-2.5 grid grid-cols-3 gap-1.5 text-[11px]">
@@ -332,7 +391,13 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
                   </div>
                   <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                     <span className="truncate" dir="ltr">{a ? a.name : exercise.name}</span>
-                    <span className="shrink-0">{!a || a.videoUrl ? 'فيديو' : 'يوتيوب'}</span>
+                  </div>
+                  <div className="mt-1">
+                    <LevelBadges
+                      difficulty={a ? a.difficulty : exercise.difficulty}
+                      risk={a ? a.risk : exercise.risk}
+                      compact
+                    />
                   </div>
                   {a?.note && selected && (
                     <p className="mt-1 text-[11px] text-sky-700 dark:text-sky-300 leading-relaxed">
@@ -360,6 +425,11 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
             <div className="text-sm font-bold text-slate-900 dark:text-white font-mono-num mt-0.5">
               {exercise.sets} × {exercise.reps}
             </div>
+            {exercise.warmupSets ? (
+              <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                + {exercise.warmupSets} إحماء بوزن خفيف
+              </div>
+            ) : null}
           </div>
           <div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400">قبل الفشل (RIR)</div>
@@ -368,7 +438,7 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
             </div>
           </div>
           <div>
-            <div className="text-[11px] text-slate-500 dark:text-slate-400">الراحة</div>
+            <div className="text-[11px] text-slate-500 dark:text-slate-400">{exercise.kind ? 'المؤقت' : 'الراحة'}</div>
             <div className="text-sm font-bold text-slate-900 dark:text-white font-mono-num mt-0.5">
               {exercise.restLabel}
             </div>
@@ -380,7 +450,7 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
           <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 space-y-1.5">
             <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 dark:text-amber-400">
               <AlertTriangle className="w-4 h-4 shrink-0" />
-              <span>تنبيه حمل زيادة على المفاصل</span>
+              <span>تنبيه أمان للمفاصل</span>
             </div>
             <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
               <span className="font-semibold">المشكلة: </span>
@@ -424,7 +494,9 @@ export const ExerciseMotionPlayer: React.FC<ExerciseMotionPlayerProps> = ({
               onClick={() => onStartRestTimer(exercise.restSeconds, shown.name)}
               className="flex-1 min-w-[140px] py-2.5 px-4 rounded-lg bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs sm:text-sm transition-colors whitespace-nowrap"
             >
-              تشغيل مؤقت الراحة ({exercise.restLabel})
+              {exercise.kind === 'stretch'
+                ? `مؤقت الإطالة (${exercise.restLabel})`
+                : `تشغيل مؤقت الراحة (${exercise.restLabel})`}
             </button>
           )}
           <a

@@ -70,7 +70,7 @@ export const RestTimerBar: React.FC<RestTimerBarProps> = ({
             </span>
             {remaining === 0 && (
               <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                انتهت الراحة — ابدأ المجموعة
+                خلص الوقت، كمّل
               </span>
             )}
           </div>

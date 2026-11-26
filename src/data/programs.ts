@@ -1,8 +1,11 @@
 import {
+  EXTRA_EXERCISES,
   ExerciseItem,
   IMAGES_BY_FOCUS,
+  DayFocus,
   WORKOUT_DAYS,
   WorkoutDay,
+  withStretches,
 } from './workoutData';
 
 export interface ProgramStat {
@@ -33,7 +36,7 @@ const restLabel = (sec: number): string => {
 };
 
 const BASE: Record<string, ExerciseItem> = Object.fromEntries(
-  WORKOUT_DAYS.flatMap((d) => d.exercises).map((e) => [e.id, e])
+  [...WORKOUT_DAYS.flatMap((d) => d.exercises), ...EXTRA_EXERCISES].map((e) => [e.id, e])
 );
 
 /**
@@ -55,7 +58,7 @@ function ex(
   const maxSets = Number(setsStr.split('-').pop());
   return {
     ...base,
-    id: `${programId}-d${dayNumber}-${baseId.replace(/^d\d-/, '')}`,
+    id: `${programId}-d${dayNumber}-${baseId.replace(/^(d\d|x)-/, '')}`,
     sets: setsStr,
     workingSetsCount: Number.isFinite(maxSets) ? maxSets : 1,
     reps,
@@ -63,6 +66,8 @@ function ex(
     restSeconds: rest,
     restLabel: restLabel(rest),
     isNew: false,
+    warmupSets: undefined,
+    replaces: undefined,
     ...overrides,
   };
 }
@@ -80,16 +85,17 @@ function restDay(programId: string, dayNumber: number): WorkoutDay {
 function day(
   programId: string,
   dayNumber: number,
+  focus: DayFocus,
   info: Pick<WorkoutDay, 'title' | 'subtitle' | 'coverImage' | 'coverAlt' | 'estimatedMinutes'>,
   items: Array<[baseId: string, rx: Rx, overrides?: Partial<ExerciseItem>]>
 ): WorkoutDay {
-  return {
+  return withStretches({
     dayNumber,
     dayLabel: `يوم ${toAr(dayNumber)}`,
     isRestDay: false,
     ...info,
     exercises: items.map(([id, rx, o]) => ex(programId, dayNumber, id, rx, o)),
-  };
+  }, focus, `${programId}-d${dayNumber}`);
 }
 
 /* ------------------------------------------------------------------ */
@@ -97,7 +103,7 @@ function day(
 /* ------------------------------------------------------------------ */
 const A = 'arnold';
 const ARNOLD_DAYS: WorkoutDay[] = [
-  day(A, 1, {
+  day(A, 1, 'upper', {
     title: 'صدر وضهر (A)',
     subtitle: 'السوبر الكلاسيكي بتاع أرنولد: الصدر والضهر في نفس اليوم، عضلات متضادة فبتريّح واحدة وانت بتشتغل على التانية',
     coverImage: IMAGES_BY_FOCUS.push,
@@ -112,58 +118,58 @@ const ARNOLD_DAYS: WorkoutDay[] = [
     ['d1-cable-pullover', [3, '10-12', '1', 90]],
     ['d1-abs-crunches', [3, '10-15', '1', 60]],
   ]),
-  day(A, 2, {
+  day(A, 2, 'push', {
     title: 'كتف ودراعات (A)',
     subtitle: 'الكتف بزواياه التلاتة وبعده بايسبس وترايسبس بالتبادل',
     coverImage: IMAGES_BY_FOCUS.push,
     coverAlt: 'دمبلز ومنطقة أوزان حرة',
     estimatedMinutes: 70,
   }, [
-    ['d5-db-shoulder-press', [4, '6-10', '1', 150], { name: 'DB shoulder press' }],
+    ['d5-db-shoulder-press', [4, '6-10', '1', 150]],
     ['d1-db-lateral-raises', [4, '10-15', '0-1', 90]],
-    ['d1-reverse-pec-deck', [3, '12-15', '0-1', 90], { name: 'Reverse pec deck' }],
+    ['x-reverse-pec-deck', [3, '12-15', '0-1', 90]],
     ['d2-db-curl', [3, '8-12', '1', 90]],
-    ['d2-dips-cgbp', [3, '6-10', '1-2', 120]],
+    ['d2-rope-pushdown', [3, '8-12', '1', 90]],
     ['d2-bayesian-curl', [3, '10-12', '1', 90]],
     ['d2-overhead-rope', [3, '10-12', '1', 90]],
     ['d6-wrist-flexion', [2, '12-15', '1', 60]],
   ]),
-  day(A, 3, {
+  day(A, 3, 'legs', {
     title: 'رجل (A)',
-    subtitle: 'يوم رجل تقيل: سكوات بالماكينة، رومانيان، وعزل للأماميات والخلفيات والسمانة',
+    subtitle: 'يوم رجل: هاك سكوات، ظهر ٤٥ للخلفيات والجلوتس (بدل الرومانيان)، وعزل للأماميات والخلفيات والسمانة',
     coverImage: IMAGES_BY_FOCUS.legs,
     coverAlt: 'منطقة تمارين الرجل',
     estimatedMinutes: 70,
   }, [
-    ['d6-hack-squat', [4, '6-10', '1-2', 180], { name: 'Hack squat' }],
-    ['d6-rdl', [3, '6-10', '2-3', 180], { name: 'RDL' }],
+    ['d6-hack-squat', [4, '6-10', '1-2', 180], { name: 'Hack squat machine' }],
+    ['d6-hip-hinge', [3, '10-12', '1-2', 120]],
     ['d6-leg-extension', [3, '10-15', '0-1', 90]],
     ['d6-lying-leg-curl', [3, '10-12', '0-1', 90]],
     ['d3-calf-raises', [4, '10-15', '0-1', 60]],
     ['d3-torso-rotation', [2, '12', '2', 60]],
   ]),
-  day(A, 4, {
+  day(A, 4, 'upper', {
     title: 'صدر وضهر (B)',
     subtitle: 'نفس العضلات بتمارين مختلفة وتكرارات أعلى شوية عشان التحفيز يبقى متنوع',
     coverImage: IMAGES_BY_FOCUS.pull,
     coverAlt: 'أجهزة الكابل والسحب',
     estimatedMinutes: 70,
   }, [
-    ['d2-machine-chest-press', [4, '8-12', '1', 120]],
+    ['x-machine-chest-press', [4, '8-12', '1', 120]],
     ['d5-close-seated-row', [4, '8-12', '1', 120]],
     ['d2-db-low-incline', [3, '8-12', '1', 120]],
-    ['d5-lat-pulldown', [3, '8-12', '1', 120]],
+    ['x-lat-pulldown', [3, '8-12', '1', 120]],
     ['d2-chest-fly', [3, '12-15', '0-1', 90]],
-    ['d5-face-pull', [3, '12-15', '1', 60]],
+    ['x-face-pull', [3, '12-15', '1', 60]],
   ]),
-  day(A, 5, {
+  day(A, 5, 'push', {
     title: 'كتف ودراعات (B)',
     subtitle: 'رفرفة بأكتر من زاوية وتمارين دراع بتركيز على الإطالة',
     coverImage: IMAGES_BY_FOCUS.push,
     coverAlt: 'كابلات ودمبلز لتمارين الكتف والدراع',
     estimatedMinutes: 65,
   }, [
-    ['d5-db-shoulder-press', [3, '8-12', '1', 120], { name: 'DB shoulder press' }],
+    ['d5-db-shoulder-press', [3, '8-12', '1', 120]],
     ['d5-lateral-machine', [4, '12-15', '0-1', 90]],
     ['d1-cable-y-raises', [3, '10-12', '1', 90]],
     ['d5-db-preacher-curl', [3, '8-12', '1-2', 90]],
@@ -172,9 +178,9 @@ const ARNOLD_DAYS: WorkoutDay[] = [
     ['d2-overhead-rope', [2, '10-12', '1', 90]],
     ['d1-cable-reverse-curl', [2, '10-12', '1', 60]],
   ]),
-  day(A, 6, {
+  day(A, 6, 'legs', {
     title: 'رجل (B)',
-    subtitle: 'ليج برس وخلفيات وجلوتس، مع الضامة والسمانة وأسفل الضهر',
+    subtitle: 'ليج برس وخلفيات وجلوتس، مع الضامة والسمانة',
     coverImage: IMAGES_BY_FOCUS.legs,
     coverAlt: 'جهاز الليج برس',
     estimatedMinutes: 70,
@@ -185,7 +191,6 @@ const ARNOLD_DAYS: WorkoutDay[] = [
     ['d6-leg-extension', [3, '12-15', '0-1', 90]],
     ['d3-adductor', [2, '12-15', '1', 60]],
     ['d6-calf-raises', [4, '10-15', '0-1', 60]],
-    ['d6-back-extension', [2, '10-12', '2', 90]],
   ]),
   restDay(A, 7),
 ];
@@ -195,7 +200,7 @@ const ARNOLD_DAYS: WorkoutDay[] = [
 /* ------------------------------------------------------------------ */
 const P = 'ppl';
 const PPL_DAYS: WorkoutDay[] = [
-  day(P, 1, {
+  day(P, 1, 'push', {
     title: 'دفع (Push A)',
     subtitle: 'صدر وكتف أمامي وجانبي وترايسبس، بادئ بالتمارين المركبة التقيلة',
     coverImage: IMAGES_BY_FOCUS.push,
@@ -204,13 +209,13 @@ const PPL_DAYS: WorkoutDay[] = [
   }, [
     ['d5-db-flat-press', [3, '6-10', '1', 150]],
     ['d2-db-low-incline', [3, '8-12', '1', 120]],
-    ['d5-db-shoulder-press', [3, '8-10', '1', 150], { name: 'DB shoulder press' }],
+    ['d5-db-shoulder-press', [3, '8-10', '1', 150]],
     ['d2-chest-fly', [2, '12-15', '0-1', 90]],
     ['d1-db-lateral-raises', [3, '12-15', '0-1', 90]],
     ['d2-rope-pushdown', [3, '10-12', '0-1', 90]],
     ['d2-overhead-rope', [2, '10-12', '1', 90]],
   ]),
-  day(P, 2, {
+  day(P, 2, 'pull', {
     title: 'سحب (Pull A)',
     subtitle: 'عرض وسُمك الضهر، كتف خلفي، وبايسبس',
     coverImage: IMAGES_BY_FOCUS.pull,
@@ -220,41 +225,40 @@ const PPL_DAYS: WorkoutDay[] = [
     ['d1-lat-pulldown', [3, '6-10', '1', 150]],
     ['d1-t-bar-row', [3, '8-10', '1', 150]],
     ['d1-cable-pullover', [2, '10-12', '1', 90]],
-    ['d5-face-pull', [3, '12-15', '1', 60]],
+    ['x-face-pull', [3, '12-15', '1', 60]],
     ['d1-kelso-shrugs', [2, '10-12', '1-2', 90]],
     ['d2-bayesian-curl', [3, '10-12', '1', 90]],
     ['d2-cable-hammer-curl', [2, '10-12', '1', 60]],
   ]),
-  day(P, 3, {
+  day(P, 3, 'legs', {
     title: 'رجل (Legs A)',
-    subtitle: 'سكوات بالماكينة ورومانيان وعزل كامل للرجل',
+    subtitle: 'هاك سكوات، ظهر ٤٥ للخلفيات والجلوتس (بدل الرومانيان)، وعزل كامل للرجل',
     coverImage: IMAGES_BY_FOCUS.legs,
     coverAlt: 'منطقة تمارين الرجل',
     estimatedMinutes: 65,
   }, [
-    ['d6-hack-squat', [3, '6-10', '1-2', 180], { name: 'Hack squat' }],
-    ['d6-rdl', [3, '8-10', '2-3', 180], { name: 'RDL' }],
+    ['d6-hack-squat', [3, '6-10', '1-2', 180], { name: 'Hack squat machine' }],
+    ['d6-hip-hinge', [3, '10-12', '1-2', 120]],
     ['d6-leg-extension', [3, '10-15', '0-1', 90]],
     ['d3-seated-leg-curl', [3, '10-12', '0-1', 90]],
     ['d3-calf-raises', [4, '10-15', '0-1', 60]],
     ['d1-abs-crunches', [3, '10-15', '1', 60]],
   ]),
-  day(P, 4, {
+  day(P, 4, 'push', {
     title: 'دفع (Push B)',
-    subtitle: 'ماكينة صدر، ترايسبس تقيل، وكتف جانبي بالكابل والماكينة',
+    subtitle: 'ماكينة صدر، صدر مايل، وكتف جانبي بالكابل والماكينة، وترايسبس كابل',
     coverImage: IMAGES_BY_FOCUS.push,
     coverAlt: 'ماكينة ضغط الصدر',
     estimatedMinutes: 65,
   }, [
-    ['d2-machine-chest-press', [3, '8-12', '1', 120]],
+    ['x-machine-chest-press', [3, '8-12', '1', 120]],
     ['d2-db-low-incline', [3, '8-12', '1', 120]],
-    ['d2-dips-cgbp', [3, '6-10', '1-2', 120]],
     ['d3-cable-lateral', [3, '12-15', '0-1', 60]],
     ['d5-lateral-machine', [2, '12-15', '0-1', 90]],
     ['d2-overhead-rope', [3, '10-12', '1', 90]],
-    ['d5-rope-pushdown', [2, '10-15', '0-1', 60]],
+    ['d5-rope-pushdown', [3, '10-15', '0-1', 60]],
   ]),
-  day(P, 5, {
+  day(P, 5, 'pull', {
     title: 'سحب (Pull B)',
     subtitle: 'تجديف بقبضة ضيقة، سحب علوي، كتف خلفي، وباي ارتكاز',
     coverImage: IMAGES_BY_FOCUS.pull,
@@ -262,14 +266,14 @@ const PPL_DAYS: WorkoutDay[] = [
     estimatedMinutes: 65,
   }, [
     ['d5-close-seated-row', [3, '8-12', '1', 120]],
-    ['d5-lat-pulldown', [3, '8-12', '1', 120]],
+    ['x-lat-pulldown', [3, '8-12', '1', 120]],
     ['d5-t-bar-row', [2, '10-12', '1', 120]],
-    ['d1-reverse-pec-deck', [3, '12-15', '0-1', 90], { name: 'Reverse pec deck' }],
+    ['x-reverse-pec-deck', [3, '12-15', '0-1', 90]],
     ['d5-db-preacher-curl', [3, '8-12', '1-2', 90]],
     ['d2-db-curl', [2, '10-12', '1', 60]],
     ['d1-cable-reverse-curl', [2, '10-12', '1', 60]],
   ]),
-  day(P, 6, {
+  day(P, 6, 'legs', {
     title: 'رجل (Legs B)',
     subtitle: 'ليج برس، جلوتس، ضامة وفخذ خارجي، وتبياليس للسمانة الأمامية',
     coverImage: IMAGES_BY_FOCUS.legs,
@@ -281,8 +285,8 @@ const PPL_DAYS: WorkoutDay[] = [
     ['d3-smith-hip-thrust', [3, '8-12', '1', 120]],
     ['d6-leg-extension', [2, '12-15', '0-1', 90]],
     ['d3-adductor', [2, '12-15', '1', 60]],
-    ['d3-abductor', [2, '12-15', '1', 60]],
-    ['d6-tibialis-raise', [2, '15-20', '1', 60]],
+    ['x-abductor', [2, '12-15', '1', 60]],
+    ['x-tibialis-raise', [2, '15-20', '1', 60]],
     ['d6-calf-raises', [3, '10-15', '0-1', 60]],
   ]),
   restDay(P, 7),
@@ -293,11 +297,11 @@ export const PROGRAMS: TrainingProgram[] = [
     id: 'modified',
     name: 'الجدول المعدّل',
     nameEn: 'Modified hybrid split',
-    description: 'الجدول الأصلي بعد التعديلات العلمية: ٥ أيام تدريب ويومين راحة.',
+    description: 'نفس تمارين الـ PDF بالظبط وبنفس الترتيب، مع ٣ تبديلات أمان للمبتدئين: الـ RDL، وضغط الكتف على السميث، والـ T-bar بصدر مسنود.',
     stats: [
       { label: 'تقسيمة الأسبوع', value: '٥ تدريب + ٢ راحة', sub: 'الراحة في اليوم ٤ واليوم ٧' },
       { label: 'التكرار الأسبوعي', value: '٢× لكل عضلة', sub: 'المعدل المثالي للتضخيم', tone: 'amber' },
-      { label: 'التمارين المضافة حديثًا', value: '٧ إضافات ذكية', sub: 'كتف خلفي، صدر، تبياليس، أسفل ضهر', tone: 'emerald' },
+      { label: 'التمارين', value: 'مطابقة للـ PDF', sub: 'من غير تمارين زيادة، و٣ تبديلات أمان بس', tone: 'emerald' },
     ],
     days: WORKOUT_DAYS,
   },

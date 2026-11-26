@@ -1,300 +1,259 @@
-import type { MotionPattern } from './workoutData';
+import type { Level, MotionPattern } from './workoutData';
 
 /** A substitute way to train the same muscle when the planned machine is busy / missing. */
 export interface ExerciseAlternative {
   name: string;
   nameAr: string;
-  /** Equipment needed, shown as a small tag (دمبل / كابل / ماكينة / بار / وزن الجسم / أستك). */
+  /** Equipment needed, shown as a small tag (دمبل / كابل / ماكينة / سميث). */
   equipment: string;
   note?: string;
   youtubeUrl: string;
-  /** Optional local demo clip. When missing, the YouTube link is the demo. */
-  videoUrl?: string;
-  posterUrl?: string;
+  /** Every alternative has a local demo clip, so the player never shows an empty video. */
+  videoUrl: string;
+  posterUrl: string;
+  difficulty: Level;
+  risk: Level;
 }
 
 const yt = (q: string) =>
   `https://www.youtube.com/results?search_query=${encodeURIComponent(`${q} form`)}`;
 
-/** Local demo clip + poster by asset slug. */
-const clip = (slug: string) => ({
-  videoUrl: `src/assets/videos/${slug}.mp4`,
-  posterUrl: `src/assets/posters/${slug}.jpg`,
-});
+type ClipInfo = Pick<ExerciseAlternative, 'name' | 'nameAr' | 'equipment' | 'difficulty' | 'risk'>;
 
-const alt = (
-  name: string,
-  nameAr: string,
-  equipment: string,
-  extra: { note?: string; slug?: string } = {}
-): ExerciseAlternative => ({
-  name,
-  nameAr,
-  equipment,
-  note: extra.note,
-  youtubeUrl: yt(name),
-  ...(extra.slug ? clip(extra.slug) : {}),
-});
+/**
+ * Every exercise clip that exists in src/assets/videos, with its levels.
+ * Alternatives can only be picked from this list, so each one is guaranteed to have a video.
+ * High-risk lifts (barbell RDL, barbell close grip bench) are left out on purpose.
+ */
+const CLIPS = {
+  'cable-wide-grip-lat-pulldown--7v7': { name: 'Wide grip lat pulldown', nameAr: 'سحب علوي قبضة واسعة', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'bar-lateral-pulldown-6r': { name: 'Lat pulldown', nameAr: 'سحب علوي بالبار (قبضة عادية)', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'cable-straight-arm-pulldown-6fc': { name: 'Straight arm pulldown', nameAr: 'سحب كابل بدراع مفرود', equipment: 'كابل', difficulty: 2, risk: 1 },
+  'lever-lying-t-bar-row-3h': { name: 'Chest supported T-bar row', nameAr: 'تجديف T-Bar وصدرك مسنود', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'lever-t-bar-row-1f': { name: 'Standing T-bar row machine', nameAr: 'تجديف T-Bar واقف ومنحني', equipment: 'ماكينة', difficulty: 2, risk: 2 },
+  'cable-low-seated-row-64g': { name: 'Seated cable row', nameAr: 'تجديف كابل جالس', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'dumbbell-incline-shrug-6il': { name: 'Kelso shrug (incline dumbbell)', nameAr: 'شراجز كيلسو بالدمبل على بنش مايل', equipment: 'دمبل', difficulty: 2, risk: 1 },
+  'lever-seated-reverse-fly-12': { name: 'Reverse pec deck', nameAr: 'فراشة عكسي على الماكينة', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'cable-standing-rear-delt-row--6fx': { name: 'Face pull / rear delt row', nameAr: 'فيس بول بالحبل', equipment: 'كابل', difficulty: 2, risk: 1 },
+  'cable-y-raise-8o6': { name: 'Cable Y raise', nameAr: 'رفرفة Y على الكابل', equipment: 'كابل', difficulty: 2, risk: 1 },
+  'lateral-raise-96': { name: 'Dumbbell lateral raise', nameAr: 'رفرفة جانبي بالدمبل', equipment: 'دمبل', difficulty: 1, risk: 1 },
+  'cable-one-arm-lateral-raise-64s': { name: 'Cable one arm lateral raise', nameAr: 'رفرفة جانبي كابل بدراع واحد', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'lever-lateral-raise-0a': { name: 'Lateral raise machine', nameAr: 'ماكينة الرفرفة الجانبي', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'cable-reverse-curl-6f6': { name: 'Cable reverse curl', nameAr: 'باي عكسي على الكابل', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'cable-hammer-curl-63c': { name: 'Cable rope hammer curl', nameAr: 'هامر كيرل بالحبل', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'dumbbell-biceps-curl-6hm': { name: 'Dumbbell biceps curl', nameAr: 'باي دمبل واقف', equipment: 'دمبل', difficulty: 1, risk: 1 },
+  'dumbbell-incline-curl--6i9': { name: 'Incline dumbbell curl', nameAr: 'باي دمبل على بنش مايل', equipment: 'دمبل', difficulty: 2, risk: 1 },
+  'dumbbell-preacher-curl-6js': { name: 'Dumbbell preacher curl', nameAr: 'باي ارتكاز بالدمبل', equipment: 'دمبل', difficulty: 1, risk: 2 },
+  'cable-kneeling-crunch-641': { name: 'Cable kneeling crunch', nameAr: 'كرانش كابل على الركب', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'cable-twist-6g7': { name: 'Cable torso rotation', nameAr: 'لف الجذع على الكابل', equipment: 'كابل', difficulty: 2, risk: 2 },
+  'dumbbell-incline-bench-press-6i6': { name: 'Dumbbell incline press', nameAr: 'ضغط دمبل مايل', equipment: 'دمبل', difficulty: 2, risk: 2 },
+  'dumbbell-bench-press-84': { name: 'Dumbbell bench press', nameAr: 'بنش دمبل مستوي', equipment: 'دمبل', difficulty: 2, risk: 2 },
+  'lever-chest-press-0t': { name: 'Machine chest press', nameAr: 'ماكينة ضغط الصدر', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'lever-pec-deck-fly-2s': { name: 'Pec deck fly', nameAr: 'فراشة صدر على الماكينة', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'cable-overhead-triceps-extension--64u': { name: 'Cable overhead triceps extension', nameAr: 'ترايسبس فوق الراس بالكابل', equipment: 'كابل', difficulty: 2, risk: 2 },
+  'cable-pushdown-64b': { name: 'Rope pushdown', nameAr: 'ترايسبس حبل لتحت', equipment: 'كابل', difficulty: 1, risk: 1 },
+  'dumbbell-seated-shoulder-press-6kp': { name: 'Seated dumbbell shoulder press', nameAr: 'ضغط كتف دمبل جالس', equipment: 'دمبل', difficulty: 2, risk: 2 },
+  'lever-seated-leg-curl-11': { name: 'Seated leg curl', nameAr: 'رجل خلفي جالس', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'lever-lying-leg-curl-0c': { name: 'Lying leg curl', nameAr: 'رجل خلفي نايم', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'smith-hip-thrust-8hx': { name: 'Smith hip thrust', nameAr: 'هيب ثرست على السميث', equipment: 'سميث', difficulty: 2, risk: 1 },
+  '45-degree-hyperextension--6xt': { name: '45° back extension', nameAr: 'ظهر ٤٥ درجة', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'sled-45-leg-press-1o': { name: 'Leg press 45°', nameAr: 'دفع رجل ٤٥ درجة', equipment: 'ماكينة', difficulty: 1, risk: 2 },
+  'sled-hack-squat-1r': { name: 'Hack squat', nameAr: 'هاك سكوات', equipment: 'ماكينة', difficulty: 2, risk: 2 },
+  'lever-leg-extension-0b': { name: 'Leg extension', nameAr: 'رجل أمامي', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'lever-seated-hip-adduction-10': { name: 'Hip adduction machine', nameAr: 'ماكينة الضامة', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'lever-seated-hip-abduction-19': { name: 'Hip abduction machine', nameAr: 'ماكينة الفخذ الخارجي', equipment: 'ماكينة', difficulty: 1, risk: 1 },
+  'smith-calf-raise-32': { name: 'Smith calf raise', nameAr: 'سمانة على السميث', equipment: 'سميث', difficulty: 1, risk: 1 },
+  'smith-toe-raise-3r': { name: 'Smith toe raise', nameAr: 'رفع مشط القدم على السميث', equipment: 'سميث', difficulty: 1, risk: 1 },
+  'dumbbell-one-arm-wrist-curl-6jk': { name: 'Dumbbell wrist curl', nameAr: 'سواعد دمبل', equipment: 'دمبل', difficulty: 1, risk: 1 },
+  'walking-on-incline-treadmill-8x5': { name: 'Incline treadmill walk', nameAr: 'مشي على مشاية مايلة', equipment: 'مشاية', difficulty: 1, risk: 1 },
+  'cat-cow-stretch-9l6': { name: 'Cat cow', nameAr: 'كات كاو', equipment: 'بدون أدوات', difficulty: 1, risk: 1 },
+  'kneeling-hip-flexor-stretch-6c6': { name: 'Kneeling hip flexor stretch', nameAr: 'إطالة مقدمة الحوض على ركبة', equipment: 'بدون أدوات', difficulty: 1, risk: 1 },
+  'hamstring-stretch-724': { name: 'Hamstring stretch', nameAr: 'إطالة الخلفيات', equipment: 'بدون أدوات', difficulty: 1, risk: 1 },
+  'kneeling-lat-stretch-78s': { name: 'Kneeling lat stretch', nameAr: 'إطالة المجنص على الركب', equipment: 'بدون أدوات', difficulty: 1, risk: 1 },
+} satisfies Record<string, ClipInfo>;
+
+type ClipSlug = keyof typeof CLIPS;
+
+const alt = (slug: ClipSlug, note?: string): ExerciseAlternative => {
+  const info: ClipInfo = CLIPS[slug];
+  return {
+    ...info,
+    note,
+    youtubeUrl: yt(info.name),
+    videoUrl: `src/assets/videos/${slug}.mp4`,
+    posterUrl: `src/assets/posters/${slug}.jpg`,
+  };
+};
 
 const VERTICAL_PULL = [
-  alt('Lat pulldown (neutral / close grip)', 'سحب علوي قبضة ضيقة أو متوازية', 'كابل', { slug: 'bar-lateral-pulldown-6r' }),
-  alt('Wide grip lat pulldown', 'سحب علوي قبضة واسعة', 'كابل', { slug: 'cable-wide-grip-lat-pulldown--7v7' }),
-  alt('Pull-ups', 'عقلة', 'وزن الجسم', { note: 'لو مش قادر تكمّل التكرارات استخدم أستك مساعد أو جهاز العقلة المساعد' }),
-  alt('Assisted pull-up machine', 'جهاز العقلة المساعد', 'ماكينة'),
-  alt('Single arm cable pulldown', 'سحب علوي بدراع واحد على الكابل', 'كابل', { note: 'ممتاز لو الجهاز الأساسي مشغول، استخدم أي بكرة عالية' }),
-  alt('Resistance band lat pulldown', 'سحب علوي بالأستك', 'أستك'),
+  alt('cable-wide-grip-lat-pulldown--7v7'),
+  alt('bar-lateral-pulldown-6r'),
+  alt('cable-straight-arm-pulldown-6fc', 'بيشتغل على المجنص لوحده من غير البايسبس'),
 ];
 
 const HORIZONTAL_ROW = [
-  alt('T-bar row machine', 'تجديف T-Bar على الماكينة', 'ماكينة', { slug: 'lever-t-bar-row-1f' }),
-  alt('Chest supported T-bar row', 'تجديف T-Bar بصدر مسنود', 'ماكينة', { slug: 'lever-lying-t-bar-row-3h' }),
-  alt('Seated cable row', 'تجديف كابل جالس', 'كابل', { slug: 'cable-low-seated-row-64g' }),
-  alt('Chest supported dumbbell row', 'تجديف دمبل على بنش مايل (صدر مسنود)', 'دمبل', { note: 'أأمن بديل لأسفل الضهر' }),
-  alt('One arm dumbbell row', 'تجديف دمبل بدراع واحد', 'دمبل'),
-  alt('Barbell bent over row', 'تجديف بار منحني', 'بار', { note: 'خلي ضهرك مستقيم ووزن متوسط' }),
-  alt('Machine row', 'ماكينة التجديف (Seated row machine)', 'ماكينة'),
+  alt('lever-lying-t-bar-row-3h', 'أأمن اختيار لأسفل الضهر'),
+  alt('cable-low-seated-row-64g'),
+  alt('lever-t-bar-row-1f', 'ضهرك مستقيم ووزن متوسط، لأن أسفل الضهر شايل معاك'),
 ];
 
 const PULLOVER = [
-  alt('Cable straight arm pulldown', 'سحب كابل بدراع مفرود', 'كابل', { slug: 'cable-straight-arm-pulldown-6fc' }),
-  alt('Dumbbell pullover', 'بلوفر دمبل على البنش', 'دمبل'),
-  alt('Rope straight arm pulldown', 'سحب بالحبل بدراع مفرود', 'كابل'),
-  alt('Band straight arm pulldown', 'سحب بالأستك بدراع مفرود', 'أستك'),
+  alt('cable-straight-arm-pulldown-6fc'),
+  alt('cable-wide-grip-lat-pulldown--7v7'),
+  alt('bar-lateral-pulldown-6r'),
 ];
 
 const SCAP_RETRACTION = [
-  alt('Kelso shrug (incline dumbbell)', 'شراجز كيلسو بالدمبل على بنش مايل', 'دمبل', { slug: 'dumbbell-incline-shrug-6il' }),
-  alt('Chest supported machine shrug', 'ضم لوحي الكتف على ماكينة التجديف', 'ماكينة', { note: 'دراعك مفرود، الحركة من لوح الكتف بس' }),
-  alt('Barbell bent over Kelso shrug', 'كيلسو شراج بالبار منحني', 'بار'),
-  alt('Cable scapular retraction', 'ضم لوحي الكتف على الكابل', 'كابل'),
+  alt('dumbbell-incline-shrug-6il'),
+  alt('lever-lying-t-bar-row-3h', 'دراعك مفرود وضم لوحي الكتف بس من غير ما تثني الكوع'),
+  alt('lever-seated-reverse-fly-12'),
+  alt('cable-standing-rear-delt-row--6fx'),
 ];
 
 const REAR_DELT = [
-  alt('Reverse pec deck', 'فراشة عكسي على الماكينة', 'ماكينة', { slug: 'lever-seated-reverse-fly-12' }),
-  alt('Face pull', 'فيس بول بالحبل', 'كابل', { slug: 'cable-standing-rear-delt-row--6fx' }),
-  alt('Cable reverse fly', 'فراشة عكسي على الكابل (كروس)', 'كابل'),
-  alt('Bent over dumbbell reverse fly', 'رفرفة خلفي بالدمبل منحني', 'دمبل'),
-  alt('Incline bench dumbbell reverse fly', 'رفرفة خلفي دمبل على بنش مايل', 'دمبل', { note: 'صدرك مسنود فبتعزل الكتف الخلفي أحسن' }),
-  alt('Band pull apart', 'فتح الأستك للخلف', 'أستك'),
+  alt('lever-seated-reverse-fly-12'),
+  alt('cable-standing-rear-delt-row--6fx'),
+  alt('cable-y-raise-8o6'),
 ];
 
 const Y_RAISE = [
-  alt('Cable Y raise', 'رفرفة Y على الكابل', 'كابل', { slug: 'cable-y-raise-8o6' }),
-  alt('Incline bench dumbbell Y raise', 'رفرفة Y بالدمبل على بنش مايل', 'دمبل'),
-  alt('Dumbbell lateral raise', 'رفرفة جانبي بالدمبل', 'دمبل', { slug: 'lateral-raise-96' }),
-  alt('Band Y raise', 'رفرفة Y بالأستك', 'أستك'),
+  alt('cable-y-raise-8o6'),
+  alt('lateral-raise-96'),
+  alt('cable-one-arm-lateral-raise-64s'),
+  alt('lever-lateral-raise-0a'),
 ];
 
 const LATERAL_RAISE = [
-  alt('Dumbbell lateral raise', 'رفرفة جانبي بالدمبل', 'دمبل', { slug: 'lateral-raise-96' }),
-  alt('Cable one arm lateral raise', 'رفرفة جانبي كابل بدراع واحد', 'كابل', { slug: 'cable-one-arm-lateral-raise-64s' }),
-  alt('Lateral raise machine', 'ماكينة الرفرفة الجانبي', 'ماكينة', { slug: 'lever-lateral-raise-0a' }),
-  alt('Lean away dumbbell lateral raise', 'رفرفة جانبي دمبل وانت مايل (ماسك عمود)', 'دمبل'),
-  alt('Band lateral raise', 'رفرفة جانبي بالأستك', 'أستك'),
+  alt('lateral-raise-96'),
+  alt('cable-one-arm-lateral-raise-64s'),
+  alt('lever-lateral-raise-0a'),
+  alt('cable-y-raise-8o6'),
 ];
 
 const REVERSE_CURL = [
-  alt('Cable reverse curl', 'باي عكسي على الكابل', 'كابل', { slug: 'cable-reverse-curl-6f6' }),
-  alt('EZ bar reverse curl', 'باي عكسي بالبار الزجزاج', 'بار'),
-  alt('Dumbbell reverse curl', 'باي عكسي بالدمبل', 'دمبل'),
-  alt('Cable rope hammer curl', 'هامر كيرل بالحبل', 'كابل', { slug: 'cable-hammer-curl-63c' }),
+  alt('cable-reverse-curl-6f6'),
+  alt('cable-hammer-curl-63c'),
 ];
 
 const CRUNCH = [
-  alt('Cable kneeling crunch', 'كرانش كابل على الركب', 'كابل', { slug: 'cable-kneeling-crunch-641' }),
-  alt('Ab crunch machine', 'ماكينة البطن', 'ماكينة'),
-  alt('Decline bench crunch', 'كرانش على بنش مقلوب', 'بنش'),
-  alt('Hanging knee raise', 'رفع ركب وانت متعلق', 'وزن الجسم'),
-  alt('Floor crunch', 'كرانش أرضي', 'وزن الجسم'),
+  alt('cable-kneeling-crunch-641'),
 ];
 
 const INCLINE_PRESS = [
-  alt('Dumbbell incline press', 'ضغط دمبل مايل', 'دمبل', { slug: 'dumbbell-incline-bench-press-6i6' }),
-  alt('Incline smith press', 'ضغط مايل على السميث', 'سميث'),
-  alt('Incline barbell press', 'ضغط بار مايل', 'بار'),
-  alt('Incline machine chest press', 'ماكينة ضغط صدر مايل', 'ماكينة'),
-  alt('Feet elevated push-ups', 'ضغط برجل مرفوعة', 'وزن الجسم'),
+  alt('dumbbell-incline-bench-press-6i6'),
+  alt('lever-chest-press-0t', 'الماكينة بتثبّت المسار، أسهل وأأمن للمبتدئ'),
+  alt('dumbbell-bench-press-84'),
 ];
 
 const FLAT_PRESS = [
-  alt('Dumbbell bench press', 'بنش دمبل مستوي', 'دمبل', { slug: 'dumbbell-bench-press-84' }),
-  alt('Machine chest press', 'ماكينة ضغط الصدر', 'ماكينة', { slug: 'lever-chest-press-0t' }),
-  alt('Barbell bench press', 'بنش بار مستوي', 'بار'),
-  alt('Smith bench press', 'بنش على السميث', 'سميث'),
-  alt('Push-ups (weighted)', 'ضغط أرضي (بوزن على الضهر لو سهل)', 'وزن الجسم'),
+  alt('dumbbell-bench-press-84'),
+  alt('lever-chest-press-0t', 'الماكينة بتثبّت المسار، أسهل وأأمن للمبتدئ'),
+  alt('dumbbell-incline-bench-press-6i6'),
 ];
 
 const CHEST_FLY = [
-  alt('Pec deck fly', 'فراشة صدر على الماكينة', 'ماكينة', { slug: 'lever-pec-deck-fly-2s' }),
-  alt('Cable crossover fly', 'كروس أوفر كابل', 'كابل'),
-  alt('Low to high cable fly', 'كروس كابل من تحت لفوق', 'كابل'),
-  alt('Dumbbell fly', 'تفتيح دمبل على البنش', 'دمبل', { note: 'متنزلش أوطى من مستوى الكتف' }),
+  alt('lever-pec-deck-fly-2s'),
+  alt('lever-chest-press-0t'),
 ];
 
-const HEAVY_TRICEPS = [
-  alt('Close grip bench press', 'بنش قبضة ضيقة', 'بار', { slug: 'close-grip-bench-press-0' }),
-  alt('Parallel bar dips', 'متوازي (Dips)', 'وزن الجسم', { note: 'جسمك مفرود عشان التركيز يبقى على الترايسبس' }),
-  alt('Smith close grip press', 'ضغط قبضة ضيقة على السميث', 'سميث'),
-  alt('Bench dips', 'ديبس على البنش', 'وزن الجسم'),
-  alt('Diamond push-ups', 'ضغط دايموند', 'وزن الجسم'),
-];
-
-const OVERHEAD_TRICEPS = [
-  alt('Cable overhead triceps extension', 'ترايسبس خلف الرأس بالكابل', 'كابل', { slug: 'cable-overhead-triceps-extension--64u' }),
-  alt('Seated dumbbell overhead extension', 'ترايسبس خلف الرأس بالدمبل (جالس)', 'دمبل'),
-  alt('EZ bar skull crusher', 'سكال كراشر بالبار الزجزاج', 'بار', { note: 'نزّل البار ورا راسك شوية لإطالة أكبر' }),
-  alt('Band overhead triceps extension', 'ترايسبس خلف الرأس بالأستك', 'أستك'),
-];
-
-const PUSHDOWN = [
-  alt('Rope pushdown', 'ترايسبس حبل', 'كابل', { slug: 'cable-pushdown-64b' }),
-  alt('Straight bar pushdown', 'ترايسبس بالبار المستقيم', 'كابل'),
-  alt('V-bar pushdown', 'ترايسبس بالبار V', 'كابل'),
-  alt('Dumbbell kickback', 'كيك باك بالدمبل', 'دمبل'),
-  alt('Band triceps pushdown', 'ترايسبس بالأستك', 'أستك'),
+const TRICEPS = [
+  alt('cable-pushdown-64b'),
+  alt('cable-overhead-triceps-extension--64u', 'وزن متوسط عشان وتر الكوع'),
 ];
 
 const STRETCH_CURL = [
-  alt('Incline dumbbell curl', 'باي دمبل على بنش مايل', 'دمبل', { slug: 'dumbbell-incline-curl--6i9' }),
-  alt('Bayesian cable curl', 'باي بايزيان على الكابل (ضهرك للكابل)', 'كابل'),
-  alt('Dumbbell biceps curl', 'باي دمبل واقف', 'دمبل', { slug: 'dumbbell-biceps-curl-6hm' }),
+  alt('dumbbell-incline-curl--6i9'),
+  alt('dumbbell-biceps-curl-6hm'),
+  alt('cable-hammer-curl-63c'),
 ];
 
 const CURL = [
-  alt('Dumbbell biceps curl', 'باي دمبل واقف', 'دمبل', { slug: 'dumbbell-biceps-curl-6hm' }),
-  alt('EZ bar curl', 'باي بالبار الزجزاج', 'بار'),
-  alt('Cable curl (straight bar)', 'باي على الكابل بالبار', 'كابل'),
-  alt('Barbell curl', 'باي بالبار المستقيم', 'بار'),
-  alt('Band curl', 'باي بالأستك', 'أستك'),
+  alt('dumbbell-biceps-curl-6hm'),
+  alt('dumbbell-incline-curl--6i9'),
+  alt('dumbbell-preacher-curl-6js'),
+  alt('cable-hammer-curl-63c'),
 ];
 
 const HAMMER = [
-  alt('Cable rope hammer curl', 'هامر كيرل بالحبل', 'كابل', { slug: 'cable-hammer-curl-63c' }),
-  alt('Dumbbell hammer curl', 'هامر كيرل بالدمبل', 'دمبل'),
-  alt('Cross body hammer curl', 'هامر كيرل عرضي', 'دمبل'),
+  alt('cable-hammer-curl-63c'),
+  alt('cable-reverse-curl-6f6'),
+  alt('dumbbell-biceps-curl-6hm'),
 ];
 
 const PREACHER = [
-  alt('Dumbbell preacher curl', 'باي ارتكاز بالدمبل', 'دمبل', { slug: 'dumbbell-preacher-curl-6js' }),
-  alt('Machine preacher curl', 'ماكينة الباي (ارتكاز)', 'ماكينة'),
-  alt('EZ bar preacher curl', 'باي ارتكاز بالبار الزجزاج', 'بار'),
-  alt('Cable preacher curl', 'باي ارتكاز على الكابل', 'كابل'),
-  alt('Concentration curl', 'باي تركيز', 'دمبل'),
+  alt('dumbbell-preacher-curl-6js'),
+  alt('dumbbell-biceps-curl-6hm'),
+  alt('dumbbell-incline-curl--6i9'),
 ];
 
 const LEG_CURL = [
-  alt('Seated leg curl', 'رجل خلفي جالس', 'ماكينة', { slug: 'lever-seated-leg-curl-11' }),
-  alt('Lying leg curl', 'رجل خلفي نايم', 'ماكينة', { slug: 'lever-lying-leg-curl-0c' }),
-  alt('Standing single leg curl', 'رجل خلفي واقف برجل واحدة', 'ماكينة'),
-  alt('Cable leg curl (ankle strap)', 'رجل خلفي على الكابل بالحزام', 'كابل'),
-  alt('Dumbbell lying leg curl', 'رجل خلفي بالدمبل نايم على البنش', 'دمبل'),
-  alt('Nordic hamstring curl', 'نورديك كيرل', 'وزن الجسم', { note: 'صعب جدًا، ابدأ بالنزول البطيء بس' }),
+  alt('lever-seated-leg-curl-11'),
+  alt('lever-lying-leg-curl-0c'),
+  alt('45-degree-hyperextension--6xt', 'ركّز إن الحركة من الورك والشد في الخلفيات'),
 ];
 
-const HIP_THRUST = [
-  alt('Smith hip thrust', 'هيب ثرست على السميث', 'سميث', { slug: 'smith-hip-thrust-8hx' }),
-  alt('Barbell hip thrust', 'هيب ثرست بالبار', 'بار'),
-  alt('Hip thrust machine', 'ماكينة الهيب ثرست', 'ماكينة'),
-  alt('Dumbbell glute bridge', 'جلوت بريدج بالدمبل', 'دمبل'),
-  alt('Cable pull through', 'سحب كابل بين الرجلين', 'كابل'),
+const GLUTE = [
+  alt('smith-hip-thrust-8hx'),
+  alt('45-degree-hyperextension--6xt', 'ضهرك مدوّر سنة فوق وركّز على عصر الجلوتس'),
+  alt('lever-seated-hip-abduction-19', 'بيشتغل على أعلى الجلوتس'),
 ];
 
 const SQUAT_PATTERN = [
-  alt('Hack squat', 'هاك سكوات', 'ماكينة', { slug: 'sled-hack-squat-1r' }),
-  alt('Leg press 45°', 'دفع رجل ٤٥ درجة', 'ماكينة', { slug: 'sled-45-leg-press-1o' }),
-  alt('Smith machine squat', 'سكوات على السميث', 'سميث'),
-  alt('Barbell back squat', 'سكوات بالبار', 'بار'),
-  alt('Pendulum squat', 'بندولم سكوات', 'ماكينة'),
-  alt('Goblet squat', 'جوبلت سكوات بالدمبل', 'دمبل'),
-  alt('Bulgarian split squat', 'بلغاري سبليت سكوات', 'دمبل'),
+  alt('sled-hack-squat-1r'),
+  alt('sled-45-leg-press-1o'),
+  alt('lever-leg-extension-0b', 'عزل للأماميات بس، مفيش جلوتس'),
 ];
 
 const ADDUCTOR = [
-  alt('Hip adduction machine', 'ماكينة الضامة', 'ماكينة', { slug: 'lever-seated-hip-adduction-10' }),
-  alt('Cable hip adduction', 'ضامة على الكابل بالحزام', 'كابل'),
-  alt('Dumbbell sumo squat', 'سومو سكوات بالدمبل', 'دمبل'),
-  alt('Copenhagen plank', 'كوبنهاجن بلانك', 'وزن الجسم'),
+  alt('lever-seated-hip-adduction-10'),
+  alt('sled-45-leg-press-1o', 'رجلك واسعة على المنصة والصوابع لبرا عشان الضامة تشتغل'),
 ];
 
 const ABDUCTOR = [
-  alt('Hip abduction machine', 'ماكينة الفخذ الخارجي', 'ماكينة', { slug: 'lever-seated-hip-abduction-19' }),
-  alt('Cable hip abduction', 'فخذ خارجي على الكابل بالحزام', 'كابل'),
-  alt('Band seated abduction', 'فتح الرجل بالأستك جالس', 'أستك'),
-  alt('Side lying hip abduction', 'رفع الرجل جانبي وانت نايم على جنبك', 'وزن الجسم'),
+  alt('lever-seated-hip-abduction-19'),
+  alt('smith-hip-thrust-8hx'),
 ];
 
-const CALF = [
-  alt('Smith calf raise', 'سمانة على السميث', 'سميث', { slug: 'smith-calf-raise-32' }),
-  alt('Standing calf raise machine', 'ماكينة السمانة واقف', 'ماكينة'),
-  alt('Leg press calf raise', 'سمانة على جهاز الليج برس', 'ماكينة'),
-  alt('Seated calf raise', 'سمانة جالس', 'ماكينة'),
-  alt('Single leg dumbbell calf raise', 'سمانة برجل واحدة بالدمبل على سلمة', 'دمبل'),
-];
+const CALF = [alt('smith-calf-raise-32')];
 
 const ROTATION = [
-  alt('Cable torso rotation', 'لف الجذع على الكابل', 'كابل', { slug: 'cable-twist-6g7' }),
-  alt('Pallof press', 'بالوف برس (مقاومة اللف)', 'كابل', { note: 'أأمن على الفقرات من اللف نفسه' }),
-  alt('Band woodchopper', 'وود تشوبر بالأستك', 'أستك'),
-  alt('Landmine rotation', 'لاندماين روتيشن', 'بار'),
+  alt('cable-twist-6g7'),
+  alt('cable-kneeling-crunch-641', 'أأمن على الفقرات لأنه من غير لف'),
 ];
 
 const SHOULDER_PRESS = [
-  alt('Seated dumbbell shoulder press', 'ضغط كتف دمبل جالس', 'دمبل', { slug: 'dumbbell-seated-shoulder-press-6kp' }),
-  alt('Machine shoulder press', 'ماكينة ضغط الكتف', 'ماكينة'),
-  alt('Smith shoulder press', 'ضغط كتف على السميث', 'سميث', { note: 'الكوع قدامك ٣٠-٤٥ درجة' }),
-  alt('Arnold press', 'أرنولد برس', 'دمبل'),
-  alt('Landmine press', 'لاندماين برس', 'بار', { note: 'ألطف بديل على الكتف' }),
+  alt('dumbbell-seated-shoulder-press-6kp'),
+  alt('lever-lateral-raise-0a', 'لو كتفك بيوجعك في الضغط، اكتفي بالرفرفة النهارده'),
 ];
 
-const PRESS_FROM_FLAT = FLAT_PRESS;
-
-const RDL_PATTERN = [
-  alt('Romanian deadlift', 'رومانيان ديدلفت بالبار', 'بار', { slug: 'romanian-deadlift-65' }),
-  alt('Dumbbell Romanian deadlift', 'رومانيان ديدلفت بالدمبل', 'دمبل'),
-  alt('Smith Romanian deadlift', 'رومانيان ديدلفت على السميث', 'سميث'),
-  alt('Cable pull through', 'سحب كابل بين الرجلين', 'كابل', { note: 'أخف بكتير على أسفل الضهر' }),
-  alt('45° back extension (hamstring focus)', 'ظهر ٤٥ درجة بتركيز على الخلفيات', 'ماكينة', { slug: '45-degree-hyperextension--6xt' }),
+/** Hip hinge without loading the spine. The barbell RDL is intentionally not offered. */
+const HINGE = [
+  alt('45-degree-hyperextension--6xt'),
+  alt('smith-hip-thrust-8hx'),
+  alt('lever-seated-leg-curl-11'),
+  alt('lever-lying-leg-curl-0c'),
 ];
 
 const LEG_EXTENSION = [
-  alt('Leg extension', 'رجل أمامي', 'ماكينة', { slug: 'lever-leg-extension-0b' }),
-  alt('Cable leg extension (ankle strap)', 'رجل أمامي على الكابل بالحزام', 'كابل'),
-  alt('Assisted sissy squat', 'سيسي سكوات بمساعدة', 'وزن الجسم'),
-  alt('Reverse Nordic', 'ريفرس نورديك', 'وزن الجسم'),
+  alt('lever-leg-extension-0b'),
+  alt('sled-hack-squat-1r'),
+  alt('sled-45-leg-press-1o'),
 ];
 
-const BACK_EXT = [
-  alt('45° back extension', 'ظهر ٤٥ درجة', 'ماكينة', { slug: '45-degree-hyperextension--6xt' }),
-  alt('Reverse hyperextension', 'ريفرس هايبر', 'ماكينة'),
-  alt('Floor superman', 'سوبرمان على الأرض', 'وزن الجسم'),
-  alt('Bird dog', 'بيرد دوج', 'وزن الجسم'),
-];
-
-const TIBIALIS = [
-  alt('Smith toe raise', 'رفع مشط القدم على السميث', 'سميث', { slug: 'smith-toe-raise-3r' }),
-  alt('Wall tibialis raise', 'رفع مشط القدم وضهرك على الحيطة', 'وزن الجسم'),
-  alt('Dumbbell tibialis raise (seated)', 'رفع مشط القدم بدمبل بين الرجلين جالس', 'دمبل'),
-  alt('Band dorsiflexion', 'شد مشط القدم بالأستك', 'أستك'),
-];
+const TIBIALIS = [alt('smith-toe-raise-3r')];
 
 const WRIST = [
-  alt('Dumbbell wrist curl', 'سواعد دمبل', 'دمبل', { slug: 'dumbbell-one-arm-wrist-curl-6jk' }),
-  alt('Barbell wrist curl', 'سواعد بالبار', 'بار'),
-  alt('Cable wrist curl', 'سواعد على الكابل', 'كابل'),
-  alt('Behind the back barbell wrist curl', 'سواعد بالبار من ورا الضهر', 'بار'),
+  alt('dumbbell-one-arm-wrist-curl-6jk'),
+  alt('cable-reverse-curl-6f6'),
 ];
 
-const CARDIO = [
-  alt('Incline treadmill walk', 'مشي على مشاية مايلة', 'مشاية', { slug: 'walking-on-incline-treadmill-8x5' }),
-  alt('Stationary bike', 'عجلة ثابتة', 'عجلة'),
-  alt('Elliptical', 'إليبتيكال (أوبتيكال)', 'ماكينة'),
-  alt('Outdoor brisk walk', 'مشي سريع برا', 'بدون أدوات'),
-];
+const CARDIO = [alt('walking-on-incline-treadmill-8x5')];
 
 const MOBILITY = [
-  alt('Cat cow', 'كات كاو', 'بدون أدوات', { slug: 'cat-cow-stretch-9l6' }),
-  alt('Full body yoga flow', 'يوجا خفيفة للجسم كله', 'بدون أدوات'),
-  alt('Foam rolling routine', 'فوم رولر للجسم كله', 'فوم رولر'),
+  alt('cat-cow-stretch-9l6'),
+  alt('kneeling-hip-flexor-stretch-6c6'),
+  alt('hamstring-stretch-724'),
+  alt('kneeling-lat-stretch-78s'),
 ];
 
 export const ALTERNATIVES_BY_MOTION: Record<MotionPattern, ExerciseAlternative[]> = {
@@ -310,19 +269,19 @@ export const ALTERNATIVES_BY_MOTION: Record<MotionPattern, ExerciseAlternative[]
   reverse_curl: REVERSE_CURL,
   cable_crunch: CRUNCH,
   incline_db_press: INCLINE_PRESS,
-  machine_chest_press: PRESS_FROM_FLAT,
-  flat_db_press: PRESS_FROM_FLAT,
+  machine_chest_press: FLAT_PRESS,
+  flat_db_press: FLAT_PRESS,
   pec_deck_fly: CHEST_FLY,
-  close_grip_bench: HEAVY_TRICEPS,
-  overhead_rope_ext: OVERHEAD_TRICEPS,
-  rope_pushdown: PUSHDOWN,
+  close_grip_bench: TRICEPS,
+  overhead_rope_ext: TRICEPS,
+  rope_pushdown: TRICEPS,
   bayesian_curl: STRETCH_CURL,
   db_curl: CURL,
   hammer_curl: HAMMER,
   preacher_curl: PREACHER,
   seated_leg_curl: LEG_CURL,
   lying_leg_curl: LEG_CURL,
-  smith_hip_thrust: HIP_THRUST,
+  smith_hip_thrust: GLUTE,
   leg_press: SQUAT_PATTERN,
   hack_squat: SQUAT_PATTERN,
   adductor: ADDUCTOR,
@@ -330,13 +289,14 @@ export const ALTERNATIVES_BY_MOTION: Record<MotionPattern, ExerciseAlternative[]
   calf_raise: CALF,
   torso_rotation: ROTATION,
   db_shoulder_press: SHOULDER_PRESS,
-  rdl: RDL_PATTERN,
+  rdl: HINGE,
   leg_extension: LEG_EXTENSION,
-  back_extension: BACK_EXT,
+  back_extension: HINGE,
   tibialis_raise: TIBIALIS,
   wrist_flexion: WRIST,
   treadmill_walk: CARDIO,
   mobility_rest: MOBILITY,
+  stretch: [],
 };
 
 /** Alternatives for an exercise, excluding the one that is the exercise itself (same demo clip). */

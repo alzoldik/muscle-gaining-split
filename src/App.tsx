@@ -29,6 +29,7 @@ import {
 import { ALL_EXERCISES, DEFAULT_PROGRAM_ID, PROGRAMS } from './data/programs';
 import {
   ExerciseMiniIcon,
+  LevelBadges,
   ExerciseMotionPlayer,
   resolveVariant,
 } from './components/ExerciseMotionPlayer';
@@ -38,6 +39,11 @@ import { SafeImage } from './components/SafeImage';
 import { NutritionCalculator } from './components/NutritionCalculator';
 
 type FilterMode = 'all' | 'new' | 'caution';
+
+const SECTION_HEADERS: Record<'main' | 'stretch', { title: string; note: string; tone: string }> = {
+  main: { title: 'التمرين', note: 'تمارين الـ PDF', tone: 'text-amber-600 dark:text-amber-400' },
+  stretch: { title: 'إطالات بعد التمرين', note: '٣٠ ثانية لكل إطالة، بعد الكارديو', tone: 'text-sky-600 dark:text-sky-400' },
+};
 
 const STORAGE_KEY = 'hypertrophy_completed_sets_v1';
 const THEME_KEY = 'hypertrophy_theme_v1';
@@ -171,7 +177,7 @@ export default function App() {
       return currentDay.exercises.filter((e) => e.isNew);
     }
     if (filterMode === 'caution') {
-      return currentDay.exercises.filter((e) => Boolean(e.safetyCaution));
+      return currentDay.exercises.filter((e) => Boolean(e.safetyCaution) || e.risk >= 2);
     }
     return currentDay.exercises;
   }, [currentDay, filterMode]);
@@ -371,7 +377,7 @@ export default function App() {
                   href="#safety"
                   className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-sm font-medium transition-colors whitespace-nowrap"
                 >
-                  <span>تمارين الحمل الزائد (٧)</span>
+                  <span>تمارين محتاجة حذر ({HIGH_LOAD_WARNINGS.length})</span>
                 </a>
               </div>
             </div>
@@ -627,10 +633,23 @@ export default function App() {
                   const doneIndices = completedSets[ex.id] || [];
                   const allDone = doneIndices.length >= ex.workingSetsCount;
                   const shown = resolveVariant(ex, variants[ex.id]);
+                  const section = ex.kind ?? 'main';
+                  const prevSection = index > 0 ? filteredExercises[index - 1].kind ?? 'main' : null;
+                  const sectionHeader =
+                    !currentDay.isRestDay && section !== prevSection
+                      ? SECTION_HEADERS[section]
+                      : null;
 
                   return (
+                    <React.Fragment key={ex.id}>
+                    {sectionHeader && (
+                      <div className={`flex items-center gap-2 px-1 ${index > 0 ? 'pt-3' : ''}`}>
+                        <span className={`text-xs font-bold ${sectionHeader.tone}`}>{sectionHeader.title}</span>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">{sectionHeader.note}</span>
+                        <span className="flex-1 h-px bg-slate-200 dark:bg-slate-800" aria-hidden="true" />
+                      </div>
+                    )}
                     <div
-                      key={ex.id}
                       id={`ex-${ex.id}`}
                       className={`scroll-mt-20 rounded-xl border transition-colors bg-white dark:bg-[#111622] ${
                         isSelected
@@ -661,7 +680,11 @@ export default function App() {
                                 {ex.sets} × {ex.reps}
                               </span>
                               <span aria-hidden="true">·</span>
-                              <span className="font-mono-num">RIR {ex.rir}</span>
+                              {ex.kind ? (
+                                <span className="font-semibold text-sky-600 dark:text-sky-400">إطالة</span>
+                              ) : (
+                                <span className="font-mono-num">RIR {ex.rir}</span>
+                              )}
                               {ex.isNew && (
                                 <>
                                   <span aria-hidden="true">·</span>
@@ -671,12 +694,12 @@ export default function App() {
                                   </span>
                                 </>
                               )}
-                              {ex.safetyCaution && (
+                              {ex.replaces && !shown.variant && (
                                 <>
                                   <span aria-hidden="true">·</span>
-                                  <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 font-semibold">
+                                  <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
                                     <AlertTriangle className="w-3 h-3" />
-                                    حمل زيادة
+                                    بدل {ex.replaces}
                                   </span>
                                 </>
                               )}
@@ -697,6 +720,11 @@ export default function App() {
                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
                               {shown.nameAr}
                             </div>
+                            {!currentDay.isRestDay && !ex.kind && (
+                              <div className="mt-1.5">
+                                <LevelBadges difficulty={shown.difficulty} risk={shown.risk} compact />
+                              </div>
+                            )}
                           </div>
                         </button>
 
@@ -799,6 +827,7 @@ export default function App() {
                         </div>
                       )}
                     </div>
+                    </React.Fragment>
                   );
                 })
               )}
